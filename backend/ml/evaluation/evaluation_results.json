@@ -1,0 +1,55 @@
+{
+  "dataset_spec_version": "1.4",
+  "model_metadata": {
+    "model_name": "IsolationForest",
+    "n_estimators": 100,
+    "contamination": "auto",
+    "random_state": 42,
+    "training_sample_count": 2800,
+    "feature_names": [
+      "seq_length",
+      "count_CONFIRM_PAYMENT",
+      "count_FAIL_PAYMENT",
+      "count_RETRY_PAYMENT",
+      "count_CANCEL_ORDER",
+      "count_PACK_ITEMS",
+      "count_SHIP_ITEMS",
+      "count_DELIVER_ITEMS",
+      "count_REFUND_ORDER",
+      "retry_ratio",
+      "payment_failure_rate",
+      "bigram_FAIL_to_RETRY",
+      "bigram_PACK_to_SHIP",
+      "unique_event_count"
+    ],
+    "dataset_spec_version": "1.4"
+  },
+  "primary_ml_evaluation": {
+    "evaluation_sample_count": 1200,
+    "actual_normal_count": 700,
+    "actual_anomaly_count": 500,
+    "predicted_normal_count": 541,
+    "predicted_anomaly_count": 659,
+    "confusion_matrix": [
+      [
+        541,
+        159
+      ],
+      [
+        0,
+        500
+      ]
+    ],
+    "accuracy": 0.8675,
+    "precision": 0.7587253414264037,
+    "recall": 1.0,
+    "f1_score": 0.8628127696289906,
+    "roc_auc": 0.9954400000000001
+  },
+  "fsm_benchmark": {
+    "total_rule_violation_traces": 1000,
+    "correctly_rejected": 1000,
+    "incorrectly_accepted": 0,
+    "detection_rate": 1.0
+  }
+}

@@ -1,0 +1,82 @@
+# Byte-compiled / optimized / Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+
+# SQLite databases & runtime data
+*.sqlite
+*.sqlite3
+*.db
+backend/database/*.db
+
+# Generated dataset CSVs and runtime files
+# Keep the approved dataset versioned
+backend/ml/dataset/data/*.json
+!backend/ml/dataset/data/.gitkeep
+
+# Trained ML models and binary artifacts
+# Keep the trained Isolation Forest model versioned
+backend/ml/models/*.pkl
+backend/ml/models/*.onnx
+!backend/ml/models/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# IDE and Editor configurations
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Operating System files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
