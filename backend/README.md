@@ -119,3 +119,18 @@ A typical order workflow lifecycle progresses through defined stages:
 - **ML Target:** Detects unusual patterns that might technically be legal according to the FSM but represent rare, suspicious, or statistically anomalous behavioral clusters (e.g., excessive retries, skipping optional cart reviews, abnormal sequence duration).
 - **Combined Service:** Flags whether a sequence is strictly invalid (FSM), statistically irregular (ML), or both.
 
+## API Integration Guide
+
+The complete API integration documentation is available at:
+
+[`docs/API_INTEGRATION_GUIDE.md`](docs/API_INTEGRATION_GUIDE.md)
+
+This guide includes:
+- Available REST API endpoints and HTTP methods.
+- Request and response formats.
+- Example API requests and responses.
+- Error handling and HTTP status codes.
+- Backend setup and integration instructions.
+- CORS configuration and environment variables.
+
+Refer to this guide when connecting the frontend to the backend API.
