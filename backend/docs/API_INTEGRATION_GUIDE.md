@@ -35,7 +35,7 @@ The backend reads settings from environment variables with safe defaults:
 
 | Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `TOC_DATABASE_URL` | String | `sqlite:///backend/toc_workflow.db` | SQLAlchemy connection URL for SQLite database. |
+| `TOC_DATABASE_URL` | String | `sqlite:///<backend_dir>/toc_workflow.db` | SQLAlchemy connection URL for SQLite database. Defaults to the canonical absolute path to `backend/toc_workflow.db` using forward slashes. |
 | `TOC_DATABASE_ECHO` | Boolean | `False` | Log raw SQL statements to console (`true`/`false`). |
 | `INIT_DB_ON_STARTUP` | Boolean | `False` | Automatically create database tables during ASGI lifespan startup. |
 | `CORS_ORIGINS` | Comma-delimited | `http://localhost:3000,http://localhost:5173` | Allowed frontend web origins. |
@@ -80,9 +80,12 @@ The engine evaluates event sequences using a hybrid two-stage decision tree comb
 8. `REFUND_ORDER`
 
 ### Terminal States ($F$)
-- `DELIVERED` (completed successfully)
-- `CANCELLED` (terminated early)
-- `REFUNDED` (returned/refunded post-delivery)
+- `DELIVERED` (completed successfully via order fulfillment)
+- `CANCELLED` (terminated early from `CREATED` or `PAYMENT_FAILED`)
+- `REFUNDED` (refunded prior to dispatch from `PAID` or `PACKED` states)
+
+> [!NOTE]
+> In the formal workflow grammar, refunds can only occur prior to dispatch via the transitions `(PAID, REFUND_ORDER) -> REFUNDED` and `(PACKED, REFUND_ORDER) -> REFUNDED`. Once an order transitions to `DELIVERED`, it has reached a terminal absorbing state and no further events (including `REFUND_ORDER`) are permitted.
 
 ---
 
@@ -114,7 +117,7 @@ The engine evaluates event sequences using a hybrid two-stage decision tree comb
 {
   "service_status": "OPERATIONAL",
   "dataset_spec_version": "1.4",
-  "model_artifact_path": "C:\\Users\\SUPRATEEK\\TOC_PROJECT\\backend\\ml\\models\\isolation_forest.joblib",
+  "model_artifact_path": ".../backend/ml/models/isolation_forest.joblib",
   "model_artifact_exists": true,
   "supported_verdicts": [
     "NORMAL",
@@ -171,7 +174,7 @@ Event sequences may be supplied as a semicolon-delimited string or as a list of 
   "ml_evaluation": {
     "prediction": "NORMAL",
     "is_ml_anomaly": false,
-    "anomaly_score": -0.2154,
+    "anomaly_score": -0.1842,
     "raw_decision_score": 0.1842,
     "features": {
       "seq_length": 4.0,
@@ -197,13 +200,16 @@ Event sequences may be supplied as a semicolon-delimited string or as a list of 
     "key_factors": [
       "FSM validated without errors",
       "Terminated in valid state DELIVERED",
-      "Isolation Forest score within normal baseline (-0.2154)"
+      "Isolation Forest score within normal baseline (-0.1842)"
     ],
     "recommended_action": "Standard order execution following expected baseline paths. No operational intervention required."
   },
   "created_at": "2026-11-09T14:15:30.123456Z"
 }
 ```
+
+> [!NOTE]
+> **Anomaly Score Semantics:** The backend computes `anomaly_score = -raw_decision_score`. Scikit-learn's `decision_function` outputs positive values for normal baseline instances and negative values for outliers; the backend negates this value so that higher positive scores represent anomalies, while scores $\le 0.0$ represent normal baseline executions. Anomaly scores are raw decision values, are not probabilities, and are not bounded to $[-1, 1]$ or any fixed percentage range.
 
 ---
 
@@ -280,7 +286,7 @@ Supports mixed representations:
   - `order_id` (string path parameter, 1-64 characters)
   - `limit` (query parameter, default: 50, max: 1000)
 - **Response Codes:** `200 OK`, `500 Internal Server Error`
-- **Ordering:** Chronological descending (`created_at DESC, id DESC`).
+- **Ordering:** Newest analysis first (`created_at DESC, id DESC`).
 
 #### Response Schema (`OrderHistoryResponse`):
 ```json
@@ -349,7 +355,7 @@ Supports mixed representations:
 
 ## 6. Standardized Error Envelope
 
-All HTTP client and server errors (`400`, `404`, `422`, `500`, `503`) follow the unified nested error envelope:
+All application-level API errors (`404`, `422`, `500`, `503`) follow the unified nested error envelope:
 
 ```json
 {
@@ -369,11 +375,15 @@ All HTTP client and server errors (`400`, `404`, `422`, `500`, `503`) follow the
 ```
 
 ### Standard Error Codes
-- `VALIDATION_ERROR` (HTTP 422): Schema or parameter validation failed.
-- `NOT_FOUND` (HTTP 404): Resource ID does not exist.
-- `SERVICE_UNAVAILABLE` (HTTP 503): Database or model dependencies are unavailable.
-- `MAPPING_ERROR` (HTTP 500): Corrupted database record could not be mapped to schema.
+- `VALIDATION_ERROR` (HTTP 422): Request schema or body/path parameter validation failed.
+- `UNPROCESSABLE_ENTITY` (HTTP 422): Unsupported filter parameter (e.g., unrecognized `verdict` query parameter).
+- `NOT_FOUND` (HTTP 404): Requested analysis ID does not exist.
+- `SERVICE_UNAVAILABLE` (HTTP 503): Database is unreachable or ML model artifact is missing.
+- `MAPPING_ERROR` (HTTP 500): Database record could not be mapped to response schema.
 - `INTERNAL_SERVER_ERROR` (HTTP 500): Safe fallback for unhandled server exceptions without leaking internal stack traces.
+
+> [!NOTE]
+> **CORS Preflight HTTP 400 Behavior:** When a CORS preflight request uses an unsupported method or header, Starlette's `CORSMiddleware` intercepts the request and responds with a raw plain-text `400 Bad Request` (`Disallowed CORS method` or `Disallowed CORS header`), rather than entering the FastAPI exception handler or returning the JSON `ErrorResponse` envelope.
 
 ---
 
@@ -472,18 +482,25 @@ async function fetchDashboardMetrics() {
 
 ### 8.2 Rendering FSM Errors
 When `fsm_evaluation.error` is present:
-- Display the `error_type` (e.g., `INVALID_TRANSITION`, `PREMATURE_TERMINATION`).
-- Highlight the `failed_event` and `failed_step` in a visual trace progress bar.
-- Show the `state_at_failure` and suggest valid actions from `allowed_events`.
+- Display the `error_type` using the 3 implemented FSM error types:
+  - `INVALID_TRANSITION`: The event is valid in the alphabet $\Sigma$ but undefined from `state_at_failure` in the transition function $\delta$.
+  - `UNKNOWN_EVENT`: The event token is completely unrecognized in alphabet $\Sigma$.
+  - `TERMINAL_STATE_VIOLATION`: An event was attempted after the workflow already reached a terminal state (`DELIVERED`, `CANCELLED`, or `REFUNDED`).
+- Highlight the `failed_event` and `failed_step` (1-indexed) in a visual trace progress bar.
+- Display the `state_at_failure` and suggest valid next actions from `allowed_events`.
 
-### 8.3 Rendering ML Anomaly Scores
+### 8.3 Rendering ML Anomaly Scores & Numerical Features
 When `ml_evaluation` is present:
-- **Decision Score Bar:** Render `anomaly_score` on a normalized gauge.
-- **Top Contributing Features:** Inspect the 14 features in `ml_evaluation.features` (e.g., high `retry_ratio` or `payment_failure_rate`) to explain the anomaly reason.
+- **Decision Score Display:** Display the raw numerical `anomaly_score` alongside the decision threshold of `0.0`.
+  - Scores **$> 0.0$** represent statistical anomalies (`STATISTICAL_ANOMALY`).
+  - Scores **$\le 0.0$** represent normal baseline executions (`NORMAL`).
+  - *Do not* render a normalized or percentage gauge: `anomaly_score` is unbounded and not a probability.
+- **Observed Workflow Features:** Present the 14 numerical features in `ml_evaluation.features` as raw observed trace metrics (e.g., sequence length, individual event frequencies, `retry_ratio`, and `payment_failure_rate`).
+  - *Model Explainability Note:* Isolation Forest is an ensemble of randomized trees and does not provide individual feature importance weights or mathematical attributions. Avoid presenting features as causal model weights.
 
 ### 8.4 Rendering Operational Diagnostics
 - Render the `diagnostics.severity` badge (`CRITICAL`, `WARNING`, `INFO`).
-- Display `diagnostics.root_cause` in the primary summary box.
-- Render `diagnostics.key_factors` as an enumerated bulleted list.
+- Display `diagnostics.root_cause` in the primary summary callout box.
+- Render `diagnostics.key_factors` as an enumerated bulleted list. Note that these are rule-based, evidence-driven heuristic explanations generated by the service layer from observed trace metrics and FSM evaluation, rather than mathematical ML model attributions.
 - Display `diagnostics.recommended_action` in a callout banner for triage operators.
 
